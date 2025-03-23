@@ -34,7 +34,7 @@ class Recipes(db.Model):
 # Define the Ingredients Table
 class Ingredients(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), unique=True)
+    name = db.Column(db.String(100))
     quantity = db.Column(db.Integer)  # For example, "2 cups", "1 tbsp", etc.
     unit = db.Column(db.String(100))
     
@@ -117,9 +117,9 @@ def create_inventory():
         return jsonify({'error': str(e)}), 500
 
 # Update quantity/unit of inventory 
-@app.route('/updateInventory/<int:id>', methods=['PUT'])
-def update_inventory(id):
-    item = Inventory.query.get_or_404(id)
+@app.route('/updateInventory/<string:name>', methods=['PUT'])
+def update_inventory(name):
+    item = Inventory.query.filter_by(name=name).first_or_404()
     data = request.get_json()
     
     # Now we can update the name as well since it's no longer a primary key
@@ -143,14 +143,14 @@ def update_inventory(id):
         return jsonify({'error': str(e)}), 500
 
 # Delete Ingredients from list 
-@app.route('/deleteInventory/<int:id>', methods=['DELETE'])
-def delete_inventory(id):
-    item = Inventory.query.get_or_404(id)
+@app.route('/deleteInventory/<string:name>', methods=['DELETE'])
+def delete_inventory(name):
+    item = Inventory.query.filter_by(name=name).first_or_404()
     
     try:
         db.session.delete(item)
         db.session.commit()
-        return jsonify({'message': f'Inventory item {id} deleted'})
+        return jsonify({'message': f'Inventory item {name} deleted'})
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
