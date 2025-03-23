@@ -10,15 +10,14 @@ DB_URI = os.environ.get("DATABASE_URL", "mysql+mysqlconnector://admin:biztech363
 # Configure database connection
 app.config['SQLALCHEMY_DATABASE_URI'] = DB_URI
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['SQLALCHEMY_DATABASE_URI'] = DB_URI
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # Initialize the database
 db = SQLAlchemy(app)
 
-# Define the Inventory Table
+# Define the Inventory Table with id as primary key
 class Inventory(db.Model):
-    name = db.Column(db.String(100), primary_key=True)
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    name = db.Column(db.String(100), unique=True)  # Name is now unique but not primary key
     quantity = db.Column(db.String(100))
     unit = db.Column(db.String(100))
 
@@ -63,14 +62,27 @@ def index():
 @app.route('/inventory', methods=['GET'])
 def get_inventory():
     inventory = Inventory.query.all()
-    return jsonify([{'name': item.name, 'quantity': item.quantity, 'unit': item.unit} for item in inventory])
+    return jsonify([{'id': item.id, 'name': item.name, 'quantity': item.quantity, 'unit': item.unit} for item in inventory])
+
+# Search for Ingredients by ID
+@app.route('/inventory/<int:id>', methods=['GET'])
+def get_inventory_item_by_id(id):
+    # Look up the item by id (the primary key)
+    item = Inventory.query.get_or_404(id)
+    return jsonify({
+        'id': item.id,
+        'name': item.name, 
+        'quantity': item.quantity, 
+        'unit': item.unit
+    })
 
 # Search for Ingredients by name
-@app.route('/inventory/<string:name>', methods=['GET'])
-def get_inventory_item(name):
-    # Look up the item by name (now the primary key)
-    item = Inventory.query.get_or_404(name)
+@app.route('/inventory/name/<string:name>', methods=['GET'])
+def get_inventory_item_by_name(name):
+    # Look up the item by name
+    item = Inventory.query.filter_by(name=name).first_or_404()
     return jsonify({
+        'id': item.id,
         'name': item.name, 
         'quantity': item.quantity, 
         'unit': item.unit
@@ -95,6 +107,7 @@ def create_inventory():
         db.session.add(new_item)
         db.session.commit()
         return jsonify({
+            'id': new_item.id,
             'name': new_item.name,
             'quantity': new_item.quantity,
             'unit': new_item.unit
@@ -104,14 +117,14 @@ def create_inventory():
         return jsonify({'error': str(e)}), 500
 
 # Update quantity/unit of inventory 
-@app.route('/updateInventory/<string:name>', methods=['PUT'])
-def update_inventory(name):
-    item = Inventory.query.get_or_404(name)
+@app.route('/updateInventory/<int:id>', methods=['PUT'])
+def update_inventory(id):
+    item = Inventory.query.get_or_404(id)
     data = request.get_json()
     
-    # Note: We can't update the name as it's now the primary key
-    # If you need to change the name, you'd have to delete and recreate the item
-    
+    # Now we can update the name as well since it's no longer a primary key
+    if 'name' in data:
+        item.name = data['name']
     if 'quantity' in data:
         item.quantity = data['quantity']
     if 'unit' in data:
@@ -120,6 +133,7 @@ def update_inventory(name):
     try:
         db.session.commit()
         return jsonify({
+            'id': item.id,
             'name': item.name,
             'quantity': item.quantity,
             'unit': item.unit
@@ -129,14 +143,14 @@ def update_inventory(name):
         return jsonify({'error': str(e)}), 500
 
 # Delete Ingredients from list 
-@app.route('/deleteInventory/<string:name>', methods=['DELETE'])
-def delete_inventory(name):
-    item = Inventory.query.get_or_404(name)
+@app.route('/deleteInventory/<int:id>', methods=['DELETE'])
+def delete_inventory(id):
+    item = Inventory.query.get_or_404(id)
     
     try:
         db.session.delete(item)
         db.session.commit()
-        return jsonify({'message': f'Inventory item {name} deleted'})
+        return jsonify({'message': f'Inventory item {id} deleted'})
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
@@ -203,8 +217,8 @@ def create_recipe():
                 if not all(key in ingredient_data for key in ['name', 'quantity', 'unit']):
                     continue  # Skip invalid ingredients
                 
-                # Check if ingredient exists in inventory
-                inventory_item = Inventory.query.get(ingredient_data['name'])
+                # Check if ingredient exists in inventory by name rather than as primary key
+                inventory_item = Inventory.query.filter_by(name=ingredient_data['name']).first()
                 
                 if inventory_item:
                     # Convert quantities to numbers for comparison
@@ -220,6 +234,7 @@ def create_recipe():
                             # If new quantity is zero, delete the inventory item
                             if new_qty == 0:
                                 deleted_item = {
+                                    'id': inventory_item.id,
                                     'name': inventory_item.name,
                                     'quantity': inventory_item.quantity,
                                     'unit': inventory_item.unit
@@ -230,6 +245,7 @@ def create_recipe():
                                 # Otherwise update the quantity
                                 inventory_item.quantity = str(new_qty)
                                 inventory_updates.append({
+                                    'id': inventory_item.id,
                                     'name': inventory_item.name,
                                     'old_quantity': str(inventory_qty),
                                     'new_quantity': str(new_qty),
@@ -238,6 +254,7 @@ def create_recipe():
                         else:
                             # Not enough in inventory - delete the inventory item completely
                             deleted_item = {
+                                'id': inventory_item.id,
                                 'name': inventory_item.name,
                                 'quantity': inventory_item.quantity,
                                 'unit': inventory_item.unit
